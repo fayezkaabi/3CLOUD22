@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+if ! type jq
+then
+  echo "jq tool not installed, use apt, dnf or brew to install it"
+  exit 1
+fi
+
+if terraform output | grep -q 'No outputs found' 
+then
+  echo "No output. Apply deployement first."
+  exit 42
+fi
+
+if (( $# < 1 ))
+then
+  echo "Usage: $0 ip_id"
+  exit 1
+fi
+
+ip_id=$1
+
+if [ ! "$( terraform output -json $ip_id )" ]
+then
+   echo "$ip_id: ip inconnue. Pick one in :"
+   terraform output
+   exit 2
+fi
+
+public_ip=$( terraform output -json $ip_id | jq  -s -r '.[0]' )
+
+echo "Instance public ip:" ${public_ip}
+
+#ssh -i ../ssh-keys/id_rsa_tfkeypair1 \
+ssh -i ~/.ssh/id_rsa_jp \
+    -o StrictHostKeyChecking=no \
+    -o UserKnownHostsFile=/dev/null \
+    root@${public_ip}

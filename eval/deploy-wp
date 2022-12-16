@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+php_ini="/etc/php/7.4/apache2/php.ini"
+
+apt update
+
+apt -y install git
+
+# mettez l'url de VOTRE dépôt ici ...
+git clone https://gitlab.com/python_431/3clou22.git
+
+apt -y install php php-common php-mysql php-gmp php-curl php-intl php-mbstring php-xmlrpc php-gd php-xml php-cli php-zip
+
+apt -y install mariadb-server mariadb-client
+
+sed -i \
+    -e 's/max_execution_time = .*/max_execution_time = 300/' \
+    -e 's/upload_max_filesize = .*/upload_max_filesize = 100M/' \
+    -e 's/post_max_size = .*/post_max_size = 128M/' $php_ini
+
+mysql_secure_installation <<EOF
+
+y
+secret
+secret
+y
+y
+y
+y
+EOF
+
+mysql -u root -psecret <<EOF
+CREATE DATABASE wordpress;
+CREATE USER 'wp_user'@'localhost' IDENTIFIED BY 'Passw0rd';
+GRANT ALL ON wordpress.* TO 'wp_user'@'localhost' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+EXIT
+EOF
+
+wget https://wordpress.org/latest.tar.gz
+
+tar xf latest.tar.gz 
+mv wordpress /var/www/html/
+
+chown -R www-data:www-data /var/www/html/wordpress
+chmod -R 755 /var/www/html/wordpress
+
+cat > /etc/apache2/sites-available/wordpress.conf <<EOF
+<VirtualHost *:80>
+   ServerName wordpress.example.com
+   ServerAlias www.wordpress.example.com
+   ServerAdmin admin@computingforgeeks.com
+   DocumentRoot /var/www/html/wordpress
+
+   ErrorLog ${APACHE_LOG_DIR}/wordpress_error.log
+   CustomLog ${APACHE_LOG_DIR}/wordpress_access.log combined
+
+
+   <Directory /var/www/html/wordpress>
+      Options FollowSymlinks
+      AllowOverride All
+      Require all granted
+   </Directory>
+
+</VirtualHost>
+EOF
+
+a2ensite wordpress
+a2dissite 000-default
+a2enmod rewrite ssl
+
+systemctl restart apache2
+
+# régénération des config auth, cf wp-config.php (commentaires)
+
+wget -q -O wp-config-auth.php https://api.wordpress.org/secret-key/1.1/salt/
+
+cp 3clou22/TP1/wp-config-head.php wp-config.php
+cat wp-config-auth.php >> wp-config.php
+cat 3clou22/TP1/wp-config-tail.php >> wp-config.php
+
+cp wp-config.php /var/www/html/wordpress/
+
+chown www-data:www-data /var/www/html/wordpress/wp-config.php
+
+# Obtenu après une finalisation manuelle avec :
+# myslqdump -u root -p wordpress > wordpress_initdb.sql
+mysql -u root -psecret wordpress < 3clou22/TP1/wordpress_initdb.sql
+
+touch /tmp/cloud-init-ok
+logger -p local2.info 'Cloud init Wordpress done.'
